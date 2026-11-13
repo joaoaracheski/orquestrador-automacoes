@@ -1,0 +1,21 @@
+{
+    "host": "0.0.0.0",
+    "porta": 8000,
+    "intervalo_loop_s": 1,
+    "sinal_s": 2,
+    "prazo_job_s": 8,
+    "worker_morto_s": 8,
+    "max_tentativas": 3,
+    "escala": {
+        "modo": "processo",
+        "subir_acima_de": 4,
+        "max_extras": 2,
+        "espera_entre_subidas_s": 4,
+        "derrubar_ocioso_apos_s": 10,
+        "etiquetas_extra": ["navegador"],
+        "url_master_local": "http://127.0.0.1:8000",
+        "url_master_docker": "http://master:8000",
+        "imagem": "orquestrador-automacoes",
+        "rede": "orquestrador"
+    }
+}

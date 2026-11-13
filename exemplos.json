@@ -1,0 +1,38 @@
+{
+    "automacoes": [
+        {
+            "nome": "baixar_relatorio",
+            "descricao": "Entra no portal e baixa o relatório de um cliente",
+            "etiquetas": ["navegador"],
+            "simultaneos": 10
+        },
+        {
+            "nome": "conciliar_pagamentos",
+            "descricao": "Concilia os pagamentos do dia com o extrato",
+            "etiquetas": [],
+            "simultaneos": 1
+        },
+        {
+            "nome": "lancar_sistema_legado",
+            "descricao": "Lança o lote do dia no sistema desktop antigo",
+            "etiquetas": ["tela"],
+            "simultaneos": 1
+        }
+    ],
+    "agendamentos": [
+        {"automacao": "conciliar_pagamentos", "tipo": "intervalo", "a_cada_min": 1},
+        {
+            "automacao": "baixar_relatorio",
+            "tipo": "intervalo",
+            "a_cada_min": 2,
+            "parametro": "Beta Contábil",
+            "valido_ate": "2026-12-31"
+        },
+        {
+            "automacao": "lancar_sistema_legado",
+            "tipo": "diario",
+            "horario": "08:00",
+            "dias": [0, 1, 2, 3, 4]
+        }
+    ]
+}

@@ -1,0 +1,36 @@
+name: orquestrador
+
+services:
+  master:
+    build: .
+    image: orquestrador-automacoes
+    environment:
+      ORQ_TOKEN: ${ORQ_TOKEN:?defina ORQ_TOKEN no arquivo .env}
+      ORQ_MODO_ESCALA: docker
+      ORQ_BANCO: /dados/orquestrador.db
+    ports:
+      - "8000:8000"
+    volumes:
+      - dados:/dados
+      # Acesso ao Docker do host para subir e derrubar workers extras
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - orquestrador
+
+  worker:
+    image: orquestrador-automacoes
+    command: python worker.py --master http://master:8000 --nome container-1 --etiquetas navegador --origem docker
+    environment:
+      ORQ_TOKEN: ${ORQ_TOKEN}
+    depends_on:
+      - master
+    networks:
+      - orquestrador
+
+networks:
+  orquestrador:
+    # Nome fixo: o master cria os extras nesta mesma rede
+    name: orquestrador
+
+volumes:
+  dados:

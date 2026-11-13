@@ -1,0 +1,21 @@
+# Ambiente e cache
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Dados e logs de execução
+dados/
+logs/
+*.db
+*.db-wal
+*.db-shm
+
+# Segredos
+.env
+
+# Sistema / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orquestrador</title>
+<style>
+  :root { --fundo:#0d1117; --cartao:#161b22; --borda:#30363d; --texto:#e6edf3; --fraco:#8b949e;
+          --fila:#d29922; --exec:#58a6ff; --ok:#3fb950; --erro:#f85149; --botao:#238636; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--fundo); color:var(--texto); font:14px/1.4 "Segoe UI", system-ui, sans-serif; }
+  main { max-width:1060px; margin:0 auto; padding:24px 16px; }
+  header { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  h2 { font-size:13px; color:var(--fraco); font-weight:600; margin:26px 0 8px; text-transform:uppercase; letter-spacing:.05em; }
+  .sub { color:var(--fraco); margin:0; }
+  .numeros { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-top:20px; }
+  .numero { background:var(--cartao); border:1px solid var(--borda); border-radius:10px; padding:12px 16px; }
+  .numero b { display:block; font-size:28px; } .numero span { color:var(--fraco); }
+  table { width:100%; border-collapse:collapse; background:var(--cartao); border:1px solid var(--borda); border-radius:10px; overflow:hidden; }
+  th, td { text-align:left; padding:7px 12px; border-bottom:1px solid var(--borda); vertical-align:top; }
+  th { color:var(--fraco); font-weight:600; white-space:nowrap; } tr:last-child td { border-bottom:0; }
+  .desc { color:var(--fraco); font-size:12px; }
+  .etq { display:inline-block; border:1px solid var(--borda); border-radius:6px; padding:0 6px; margin:0 4px 2px 0; color:var(--fraco); font-size:12px; }
+  .s-fila { color:var(--fila); } .s-executando { color:var(--exec); } .s-sucesso, .s-vivo, .s-ativa { color:var(--ok); } .s-erro, .s-morto, .s-desativada { color:var(--erro); }
+  .s-desligado { color:var(--fraco); }
+  button { white-space:nowrap; background:var(--botao); color:#fff; border:0; border-radius:6px; padding:5px 10px; font:inherit; cursor:pointer; }
+  button.leve { background:transparent; border:1px solid var(--borda); color:var(--texto); }
+  input, select { background:var(--fundo); color:var(--texto); border:1px solid var(--borda); border-radius:6px; padding:5px 8px; font:inherit; }
+  .forms { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  form { background:var(--cartao); border:1px solid var(--borda); border-radius:10px; padding:12px 16px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  form strong { width:100%; }
+  .aviso { min-height:20px; color:var(--fraco); margin-top:8px; }
+  .tabela { overflow-x:auto; }
+  @media (max-width:720px) { .numeros, .forms { grid-template-columns:1fr 1fr; } .forms { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Orquestrador de automações</h1>
+      <p class="sub">Roda as automações cadastradas no horário certo, distribuindo entre os workers.</p>
+    </div>
+    <label class="sub">Token para alterar <input id="token" type="password" size="14" autocomplete="off"></label>
+  </header>
+
+  <div class="numeros">
+    <div class="numero"><b id="n-fila" class="s-fila">0</b><span>na fila</span></div>
+    <div class="numero"><b id="n-executando" class="s-executando">0</b><span>executando</span></div>
+    <div class="numero"><b id="n-sucesso" class="s-sucesso">0</b><span>sucesso</span></div>
+    <div class="numero"><b id="n-erro" class="s-erro">0</b><span>erro</span></div>
+  </div>
+
+  <h2>Automações cadastradas</h2>
+  <div class="tabela"><table>
+    <thead><tr><th>Automação</th><th>Precisa de</th><th>Agendamentos</th><th>Próxima execução</th><th>Status</th><th></th></tr></thead>
+    <tbody id="automacoes"></tbody>
+  </table></div>
+
+  <h2>Workers</h2>
+  <div class="tabela"><table>
+    <thead><tr><th>Nome</th><th>Origem</th><th>Etiquetas</th><th>Status</th><th>Fazendo agora</th></tr></thead>
+    <tbody id="workers"></tbody>
+  </table></div>
+
+  <h2>Últimos jobs</h2>
+  <div class="tabela"><table>
+    <thead><tr><th>#</th><th>Automação</th><th>Parâmetro</th><th>Origem</th><th>Status</th><th>Worker</th><th>Tentativas</th></tr></thead>
+    <tbody id="jobs"></tbody>
+  </table></div>
+
+  <h2>Cadastro</h2>
+  <div class="forms">
+    <form id="f-automacao">
+      <strong>Nova automação (ou atualizar)</strong>
+      <input name="nome" placeholder="nome_do_script" required pattern="[a-z0-9_]{1,60}">
+      <input name="descricao" placeholder="o que ela faz" maxlength="200">
+      <input name="etiquetas" placeholder="etiquetas: tela,navegador">
+      <input name="simultaneos" type="number" min="1" max="50" value="1" title="execuções ao mesmo tempo">
+      <button>Salvar</button>
+    </form>
+    <form id="f-agendamento">
+      <strong>Novo agendamento</strong>
+      <select name="automacao" id="lista-automacoes" required></select>
+      <select name="tipo"><option value="intervalo">a cada (min)</option><option value="diario">todo dia às</option></select>
+      <input name="valor" placeholder="15 ou 08:00" size="7" required>
+      <input name="dias" placeholder="dias: 0-4 = seg a sex" size="16">
+      <input name="valido_ate" type="date" title="válido até (opcional)">
+      <input name="parametro" placeholder="parâmetro (opcional)" size="14">
+      <button>Agendar</button>
+    </form>
+  </div>
+  <p class="aviso" id="aviso"></p>
+</main>
+<script>
+const DIAS = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"];
+const campoToken = document.getElementById("token");
+campoToken.value = sessionStorage.getItem("token") || "";
+campoToken.addEventListener("change", () => sessionStorage.setItem("token", campoToken.value));
+
+// Monta células com textContent: nomes e parâmetros vêm de fora, nunca viram HTML
+function linha(celulas) {
+  const tr = document.createElement("tr");
+  for (const c of celulas) {
+    const td = document.createElement("td");
+    if (c instanceof Node) td.appendChild(c); else td.textContent = c ?? "";
+    tr.appendChild(td);
+  }
+  return tr;
+}
+
+function el(tag, texto, classe) {
+  const e = document.createElement(tag);
+  if (texto !== undefined) e.textContent = texto;
+  if (classe) e.className = classe;
+  return e;
+}
+
+function etiquetas(json) {
+  const lista = JSON.parse(json);
+  const frag = document.createDocumentFragment();
+  if (!lista.length) frag.appendChild(el("span", "qualquer worker", "desc"));
+  for (const e of lista) frag.appendChild(el("span", e, "etq"));
+  return frag;
+}
+
+function descreverAgendamento(a) {
+  const dias = JSON.parse(a.dias);
+  const quando = a.tipo === "intervalo" ? `a cada ${a.a_cada_min} min` : `às ${a.horario}`;
+  const quais = dias.length === 7 ? "" : " (" + dias.map(d => DIAS[d]).join(", ") + ")";
+  const ate = a.valido_ate ? ` até ${a.valido_ate.split("-").reverse().join("/")}` : "";
+  const param = a.parametro ? ` · ${a.parametro}` : "";
+  return quando + quais + ate + param + (a.ativo ? "" : " · desativado");
+}
+
+function hora(ts) {
+  return ts ? new Date(ts * 1000).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—";
+}
+
+function avisar(texto) { document.getElementById("aviso").textContent = texto; }
+
+async function enviar(caminho, dados) {
+  const resposta = await fetch(caminho, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Token": campoToken.value },
+    body: JSON.stringify(dados),
+  });
+  const corpo = await resposta.json().catch(() => ({}));
+  if (!resposta.ok) throw new Error(resposta.status === 401 ? "token inválido" : (corpo.detail || resposta.status));
+  return corpo;
+}
+
+async function executarAgora(nome) {
+  try { await enviar("/jobs", { automacao: nome }); avisar(`${nome} foi para a fila.`); }
+  catch (erro) { avisar(`Não deu para executar: ${erro.message}`); }
+}
+
+async function atualizarAutomacoes() {
+  const automacoes = await (await fetch("/automacoes")).json();
+  document.getElementById("automacoes").replaceChildren(...automacoes.map(a => {
+    const nome = document.createDocumentFragment();
+    nome.appendChild(el("div", a.nome));
+    nome.appendChild(el("div", a.descricao, "desc"));
+    const agendas = document.createDocumentFragment();
+    if (!a.agendamentos.length) agendas.appendChild(el("span", "só manual", "desc"));
+    for (const g of a.agendamentos) agendas.appendChild(el("div", descreverAgendamento(g)));
+    const proximas = a.agendamentos.filter(g => g.ativo && g.proxima).map(g => g.proxima);
+    const botao = el("button", "Executar agora", "leve");
+    botao.addEventListener("click", () => executarAgora(a.nome));
+    const status = el("span", a.ativa ? "ativa" : "desativada", a.ativa ? "s-ativa" : "s-desativada");
+    return linha([nome, etiquetas(a.etiquetas), agendas, hora(Math.min(...proximas, Infinity) === Infinity ? null : Math.min(...proximas)), status, botao]);
+  }));
+  const lista = document.getElementById("lista-automacoes");
+  const atual = lista.value;
+  lista.replaceChildren(...automacoes.map(a => { const o = el("option", a.nome); o.value = a.nome; return o; }));
+  if (atual) lista.value = atual;
+}
+
+async function atualizarEstado() {
+  const estado = await (await fetch("/estado")).json();
+  for (const s of ["fila", "executando", "sucesso", "erro"]) document.getElementById("n-" + s).textContent = estado.contagem[s];
+  document.getElementById("workers").replaceChildren(...estado.workers.map(w =>
+    linha([w.nome, w.origem, etiquetas(w.etiquetas), el("span", w.status, "s-" + w.status), w.job_atual || "—"])));
+  document.getElementById("jobs").replaceChildren(...estado.jobs.map(j =>
+    linha(["#" + j.id, j.automacao, j.parametro || "—", j.origem, el("span", j.status, "s-" + j.status), j.worker || "—", j.tentativas])));
+}
+
+document.getElementById("f-automacao").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  try {
+    await enviar("/automacoes", {
+      nome: f.get("nome"), descricao: f.get("descricao"), simultaneos: Number(f.get("simultaneos")),
+      etiquetas: f.get("etiquetas").split(",").map(s => s.trim()).filter(Boolean),
+    });
+    avisar(`Automação ${f.get("nome")} salva.`); e.target.reset(); atualizarAutomacoes();
+  } catch (erro) { avisar(`Não deu para salvar: ${erro.message}`); }
+});
+
+document.getElementById("f-agendamento").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const dados = { tipo: f.get("tipo"), valido_ate: f.get("valido_ate"), parametro: f.get("parametro") };
+  if (dados.tipo === "intervalo") dados.a_cada_min = Number(f.get("valor")); else dados.horario = f.get("valor");
+  const dias = f.get("dias").trim();
+  if (dias) {
+    dados.dias = dias.split(",").flatMap(p => {
+      const [a, b] = p.split("-").map(Number);
+      return b === undefined ? [a] : Array.from({ length: b - a + 1 }, (_, i) => a + i);
+    });
+  }
+  try {
+    await enviar(`/automacoes/${encodeURIComponent(f.get("automacao"))}/agendamentos`, dados);
+    avisar(`Agendado: ${f.get("automacao")}.`); atualizarAutomacoes();
+  } catch (erro) { avisar(`Não deu para agendar: ${erro.message}`); }
+});
+
+async function atualizar() {
+  try { await Promise.all([atualizarEstado(), atualizarAutomacoes()]); }
+  catch (erro) { avisar("Sem resposta do master. Tentando de novo..."); }
+}
+atualizar();
+setInterval(atualizar, 1000);
+</script>
+</body>
+</html>
