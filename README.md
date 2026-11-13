@@ -22,7 +22,7 @@ Um **master** guarda o cadastro e a agenda das automações e distribui os jobs.
 em container, VM ou PC, pedem trabalho a ele.
 
 ```text
-master (API + painel + loop a cada 1 s)
+master (API + loop a cada 1 s)          painel (Flet) ── lê e cadastra pela API
 ├─ 1. desativa agendamentos fora da validade
 ├─ 2. calcula a próxima execução dos agendamentos novos
 ├─ 3. põe na fila o que chegou a hora (e já marca a próxima)
@@ -68,15 +68,17 @@ python -m venv .venv && .venv\Scripts\activate      # no Linux: source .venv/bin
 pip install -r requirements.txt
 set ORQ_TOKEN=um-segredo-longo                       # no Linux: export ORQ_TOKEN=...
 
-python master.py                                      # painel em http://localhost:8000
+python master.py                                      # API em http://localhost:8000
 python worker.py --master http://localhost:8000 --nome container-1 --etiquetas navegador
 python worker.py --master http://localhost:8000 --nome pc-financeiro --etiquetas tela,windows
+python painel.py                                      # painel (Flet); --web abre no navegador
 
 python disparar.py baixar_relatorio --clientes 20    # enche a fila e o master liga os extras
 ```
 
 Na primeira vez, o master cadastra três automações de exemplo (`exemplos.json`) com agendamentos.
-Pelo painel dá para cadastrar outras, agendar e executar na hora (o token vai no campo do topo).
+Pelo painel dá para cadastrar outras, agendar e executar na hora. O token vem da variável `ORQ_TOKEN`
+ou do campo no topo.
 
 ### Com Docker
 
@@ -85,7 +87,7 @@ cp .env.exemplo .env          # e troque o ORQ_TOKEN
 docker compose up --build
 ```
 
-Sobe o master e um worker. Com a fila cheia, o master cria containers de worker extras na mesma rede,
+Sobe o master, um worker e o painel (em http://localhost:8550). Com a fila cheia, o master cria containers de worker extras na mesma rede,
 pela API do Docker. Para isso o compose monta o `docker.sock`, o que dá ao master controle sobre o
 Docker do host. Em produção, rode o master numa máquina dedicada a isso.
 
@@ -105,7 +107,6 @@ Todo agendamento aceita `valido_ate` (AAAA-MM-DD), que o desativa sozinho depois
 
 | Rota | Para quê | Token |
 |---|---|---|
-| `GET /` | painel | — |
 | `GET /estado` · `GET /automacoes` | dados do painel | — |
 | `POST /automacoes` | cadastrar ou atualizar automação | sim |
 | `POST /automacoes/{nome}/agendamentos` | agendar | sim |
@@ -116,11 +117,11 @@ Todo agendamento aceita `valido_ate` (AAAA-MM-DD), que o desativa sozinho depois
 ## Estrutura
 
 ```text
-master.py            # API, painel e o loop (agenda, recupera, escala)
+master.py            # API e o loop (agenda, recupera, escala)
 banco.py             # todas as regras: agenda, fila, etiquetas, prazos (SQLite)
 escalador.py         # liga e desliga workers extras (processo ou container)
 worker.py            # pede jobs, roda a automação, manda sinal de vida
-painel.html          # painel que atualiza sozinho
+painel.py            # painel em Flet: cadastro, agenda, workers e fila, atualizando sozinho
 automacoes/          # as automações de exemplo (scripts Python)
 exemplos.json        # cadastro inicial: automações e agendamentos
 config.json          # prazos, intervalos e regras de escala

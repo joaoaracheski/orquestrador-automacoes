@@ -27,6 +27,20 @@ services:
     networks:
       - orquestrador
 
+  painel:
+    image: orquestrador-automacoes
+    command: python painel.py --web --porta 8550 --master http://master:8000
+    environment:
+      ORQ_TOKEN: ${ORQ_TOKEN}
+      # Serve a página sem tentar abrir um navegador dentro do container
+      FLET_FORCE_WEB_SERVER: "true"
+    ports:
+      - "8550:8550"
+    depends_on:
+      - master
+    networks:
+      - orquestrador
+
 networks:
   orquestrador:
     # Nome fixo: o master cria os extras nesta mesma rede

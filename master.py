@@ -1,4 +1,4 @@
-"""Master do orquestrador: API para os workers, painel e o loop que agenda, recupera e escala.
+"""Master do orquestrador: API (workers e painel) e o loop que agenda, recupera e escala.
 
 Uso: ORQ_TOKEN=<segredo> python master.py
 """
@@ -17,7 +17,6 @@ from pathlib import Path
 
 import uvicorn
 from fastapi import Body, Depends, FastAPI, Header, HTTPException
-from fastapi.responses import FileResponse
 
 import banco
 import escalador
@@ -350,13 +349,6 @@ def rota_estado():
     estado["extras"] = sorted(escalador.ESTADO["extras"])
 
     return estado
-
-
-@app.get("/")
-def rota_painel():
-    """Página do painel."""
-
-    return FileResponse(PASTA_PROJETO / "painel.html")
 
 
 if __name__ == "__main__":

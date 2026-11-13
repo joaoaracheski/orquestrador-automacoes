@@ -2,3 +2,5 @@ fastapi==0.128.0
 uvicorn==0.40.0
 # Só o master usa, e só no modo de escala "docker"
 docker==7.1.0
+# Painel (painel.py)
+flet[all]==1.1.2
