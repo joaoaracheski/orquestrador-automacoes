@@ -345,7 +345,9 @@ def registrar_worker(caminho, nome, etiquetas, origem, agora=None):
 def receber_sinal(caminho, worker_id, prazo_s, agora=None):
     """Sinal de vida do worker: atualiza o horário e renova o prazo dos jobs dele.
 
-    Chamada pela rota POST /workers/{id}/sinal. Devolve False se o worker não existe
+    Chamada pela rota POST /workers/{id}/sinal. Devolve os ids dos jobs que ainda são
+    deste worker: um job que não está na lista foi devolvido à fila (o worker ficou sem
+    sinal) e o worker precisa parar de rodá-lo. Devolve None se o worker não existe
     (ex.: banco recriado), para ele se registrar de novo.
     """
 
@@ -356,12 +358,18 @@ def receber_sinal(caminho, worker_id, prazo_s, agora=None):
             "UPDATE workers SET ultimo_sinal = ?, status = 'vivo' WHERE id = ?",
             (agora, worker_id),
         )
+        if cursor.rowcount != 1:
+            return None
         conexao.execute(
             "UPDATE jobs SET prazo = ? WHERE worker_id = ? AND status = ?",
             (agora + prazo_s, worker_id, EXECUTANDO),
         )
+        meus = conexao.execute(
+            "SELECT id FROM jobs WHERE worker_id = ? AND status = ?",
+            (worker_id, EXECUTANDO),
+        ).fetchall()
 
-    return cursor.rowcount == 1
+    return [job["id"] for job in meus]
 
 
 def pegar_job(caminho, worker_id, prazo_s, agora=None):
@@ -485,24 +493,27 @@ def recuperar_vencidos(caminho, max_tentativas, agora=None):
         ).fetchall()
 
         devolvidos = desistidos = 0
+        # O WHERE repete o status e o prazo: entre o SELECT e o UPDATE o worker pode ter
+        # concluído o job (ou renovado o prazo), e aí ele não pode voltar para a fila
+        ainda_vencido = " WHERE id = ? AND status = ? AND prazo < ?"
         for job in vencidos:
             tentativas = job["tentativas"] + 1
 
             if tentativas >= max_tentativas:
-                conexao.execute(
+                cursor = conexao.execute(
                     "UPDATE jobs SET status = ?, tentativas = ?, fim = ?, prazo = NULL,"
                     " saida = 'O worker parou de responder em todas as tentativas.'"
-                    " WHERE id = ?",
-                    (ERRO, tentativas, agora, job["id"]),
+                    + ainda_vencido,
+                    (ERRO, tentativas, agora, job["id"], EXECUTANDO, agora),
                 )
-                desistidos += 1
+                desistidos += cursor.rowcount
             else:
-                conexao.execute(
+                cursor = conexao.execute(
                     "UPDATE jobs SET status = ?, tentativas = ?, worker_id = NULL,"
-                    " inicio = NULL, prazo = NULL WHERE id = ?",
-                    (FILA, tentativas, job["id"]),
+                    " inicio = NULL, prazo = NULL" + ainda_vencido,
+                    (FILA, tentativas, job["id"], EXECUTANDO, agora),
                 )
-                devolvidos += 1
+                devolvidos += cursor.rowcount
 
     return devolvidos, desistidos
 

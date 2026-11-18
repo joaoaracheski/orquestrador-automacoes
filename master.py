@@ -200,12 +200,16 @@ def rota_registrar(dados: dict = Body(...)):
 
 @app.post("/workers/{worker_id}/sinal", dependencies=[Depends(exigir_token)])
 def rota_sinal(worker_id: int):
-    """Sinal de vida; 404 manda o worker se registrar de novo (ex.: banco recriado)."""
+    """Sinal de vida; 404 manda o worker se registrar de novo (ex.: banco recriado).
 
-    if not banco.receber_sinal(BANCO, worker_id, CONFIG["prazo_job_s"]):
+    Devolve os jobs que ainda são dele: o worker para o job que não estiver na lista.
+    """
+
+    jobs = banco.receber_sinal(BANCO, worker_id, CONFIG["prazo_job_s"])
+    if jobs is None:
         raise HTTPException(status_code=404, detail="worker desconhecido")
 
-    return {"ok": True}
+    return {"ok": True, "jobs": jobs}
 
 
 @app.post("/workers/{worker_id}/proximo", dependencies=[Depends(exigir_token)])

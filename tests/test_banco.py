@@ -1,6 +1,8 @@
 """Testes das regras: agendamentos, etiquetas, limite simultâneo, prazo e retentativas."""
 
+import functools
 from datetime import date, datetime
+from types import SimpleNamespace
 
 import banco
 
@@ -187,6 +189,62 @@ def test_sinal_de_vida_renova_o_prazo(tmp_path):
     banco.receber_sinal(caminho, vivo, prazo_s=10, agora=1008)
 
     assert banco.recuperar_vencidos(caminho, 3, agora=1015) == (0, 0)
+
+
+def test_sinal_devolve_os_jobs_que_ainda_sao_do_worker(tmp_path):
+    """O sinal lista o job do worker; depois de devolvido à fila, a lista vem vazia."""
+
+    caminho = criar(tmp_path)
+    banco.enfileirar(caminho, BAIXAR)
+    lento = banco.registrar_worker(caminho, "lento", ["navegador"], "docker")
+    job = banco.pegar_job(caminho, lento, prazo_s=10, agora=1000)
+
+    assert banco.receber_sinal(caminho, lento, 10, agora=1002) == [job["id"]]
+
+    banco.recuperar_vencidos(caminho, 3, agora=1020)
+    assert banco.receber_sinal(caminho, lento, 10, agora=1021) == []
+    assert banco.receber_sinal(caminho, 999, 10) is None
+
+
+def executar_e_concluir(conexao, corrida, sql, parametros=()):
+    """execute que, logo depois do SELECT dos vencidos, conclui o job (o worker terminou)."""
+
+    resultado = conexao.execute(sql, parametros)
+    if sql.startswith("SELECT id, tentativas") and not corrida["feito"]:
+        corrida["feito"] = True
+        banco.concluir_job(corrida["caminho"], corrida["job"], corrida["worker"], 0, "ok")
+    return resultado
+
+
+def conectar_com_corrida(conectar_original, corrida, caminho):
+    """Conexão de verdade com o execute trocado por executar_e_concluir."""
+
+    conexao = conectar_original(caminho)
+    return SimpleNamespace(
+        execute=functools.partial(executar_e_concluir, conexao, corrida),
+        close=conexao.close,
+    )
+
+
+def test_job_concluido_durante_a_recuperacao_nao_volta_para_a_fila(
+    tmp_path, monkeypatch
+):
+    """Worker que conclui entre a leitura e a devolução: o sucesso vale e o job não roda de novo."""
+
+    caminho = criar(tmp_path)
+    banco.enfileirar(caminho, BAIXAR)
+    worker = banco.registrar_worker(caminho, "w", ["navegador"], "docker")
+    job = banco.pegar_job(caminho, worker, prazo_s=10, agora=1000)
+    corrida = {"caminho": caminho, "job": job["id"], "worker": worker, "feito": False}
+    monkeypatch.setattr(
+        banco,
+        "conectar",
+        functools.partial(conectar_com_corrida, banco.conectar, corrida),
+    )
+
+    assert banco.recuperar_vencidos(caminho, 3, agora=1020) == (0, 0)
+    monkeypatch.undo()
+    assert banco.montar_estado(caminho)["contagem"]["sucesso"] == 1
 
 
 def test_desiste_depois_do_maximo_de_tentativas(tmp_path):

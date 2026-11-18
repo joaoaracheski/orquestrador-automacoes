@@ -28,6 +28,9 @@ ESPERA_SEM_JOB_S = 1.5
 # Tempo máximo de um job; passou disso, o worker mata o script e devolve erro
 TEMPO_MAXIMO_S = 600
 
+# De quanto em quanto tempo o worker confere se o job ainda é dele enquanto o script roda
+INTERVALO_CONFERIR_S = 0.5
+
 # Quanto da saída do script vai para o master (o fim é o que interessa no erro)
 TAMANHO_SAIDA = 2000
 
@@ -59,7 +62,13 @@ def main():
             time.sleep(ESPERA_SEM_JOB_S)
             continue
 
-        codigo, saida = executar(job)
+        codigo, saida = executar(worker, job)
+
+        if codigo is None:
+            # O master já deu o job para outro worker: o resultado daqui não vale mais
+            avisar(worker, f"{job['automacao']} #{job['id']} interrompida: {saida}")
+            continue
+
         avisar(worker, f"{job['automacao']} #{job['id']} terminou com código {codigo}")
         chamar(
             worker,
@@ -118,8 +127,11 @@ def enviar_sinais(worker):
     while True:
         time.sleep(worker["sinal_s"])
 
+        # Hora de ENVIO: a lista de jobs vale para o que o worker tinha antes desse instante
+        enviado = time.monotonic()
         try:
-            chamar(worker, f"/workers/{worker['id']}/sinal", {})
+            resposta = chamar(worker, f"/workers/{worker['id']}/sinal", {})
+            worker["sinal"] = {"enviado": enviado, "jobs": set(resposta.get("jobs", []))}
         except urllib.error.HTTPError as erro:
             if erro.code == 404:
                 registrar(worker)
@@ -136,12 +148,15 @@ def pedir_job(worker):
         return None
 
 
-def executar(job):
+def executar(worker, job):
     """Roda a automação como processo separado e devolve (código de saída, fim da saída).
 
     Chamada por main. Processo separado: se o script travar ou cair, o worker continua.
+    Devolve código None quando o job foi devolvido à fila no meio (o worker ficou sem
+    sinal de vida e outro worker pegou): o script é interrompido para não rodar duas vezes.
     """
 
+    recebido = time.monotonic()
     nome = job["automacao"]
     script = PASTA_AUTOMACOES / f"{nome}.py"
 
@@ -153,21 +168,52 @@ def executar(job):
     if job.get("parametro"):
         comando.append(job["parametro"])
 
-    try:
-        processo = subprocess.run(
-            comando,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=TEMPO_MAXIMO_S,
-        )
-    except subprocess.TimeoutExpired:
-        return 124, f"passou de {TEMPO_MAXIMO_S} s e foi interrompida"
+    processo = subprocess.Popen(
+        comando,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
 
-    saida = (processo.stdout + processo.stderr)[-TAMANHO_SAIDA:]
+    while True:
+        try:
+            stdout, stderr = processo.communicate(timeout=INTERVALO_CONFERIR_S)
+            break
+        except subprocess.TimeoutExpired:
+            pass
+
+        if time.monotonic() - recebido > TEMPO_MAXIMO_S:
+            interromper(processo)
+            return 124, f"passou de {TEMPO_MAXIMO_S} s e foi interrompida"
+
+        if perdeu_o_job(worker, job, recebido):
+            interromper(processo)
+            return None, "o master devolveu o job à fila e outro worker vai rodá-lo"
+
+    saida = (stdout + stderr)[-TAMANHO_SAIDA:]
 
     return processo.returncode, saida
+
+
+def perdeu_o_job(worker, job, recebido):
+    """Diz se o último sinal de vida mostrou que o job não é mais deste worker.
+
+    Só vale sinal ENVIADO depois de o job chegar: um sinal que saiu antes ainda não
+    conhecia o job e o deixaria de fora por engano. Chamada por executar.
+    """
+
+    sinal = worker.get("sinal")
+
+    return bool(sinal) and sinal["enviado"] > recebido and job["id"] not in sinal["jobs"]
+
+
+def interromper(processo):
+    """Mata o script e espera ele sair, para não deixar processo órfão. Chamada por executar."""
+
+    processo.kill()
+    processo.communicate()
 
 
 def chamar(worker, caminho, dados):

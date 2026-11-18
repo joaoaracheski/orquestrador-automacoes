@@ -51,13 +51,16 @@ registrado de novo a cada segundo.
   de cada cliente" pode liberar 10 ao mesmo tempo.
 - **Job "emprestado" com prazo.** O worker recebe o job com prazo de 8 s, renovado pelo sinal de vida.
   Se o worker some, o prazo vence e o job volta para a fila. Se o worker antigo aparece depois com o
-  resultado, ele é ignorado, porque o job já é de outro.
+  resultado, ele é ignorado, porque o job já é de outro. E ele não fica rodando à toa: o sinal de vida
+  responde quais jobs ainda são do worker, e o que perdeu o job mata o script na hora. Assim a automação
+  não roda duas vezes ao mesmo tempo nem depois de uma queda de rede.
 - **Código de saída é o contrato.** 0 = sucesso, qualquer outro = erro. Sem "falha silenciosa".
 - **Escala com freio.** Liga no máximo um extra por vez, com espera entre um e outro, e só desliga
   extra que não está com job.
 - **Segurança.** Tudo que altera algo exige o token (`X-Token`, comparado em tempo constante). Nome de
   automação vira nome de arquivo no worker, então só aceita `[a-z0-9_]`. O parâmetro do job vai como
-  argumento, nunca por shell.
+  argumento, nunca por shell. As rotas de leitura (`/estado`, `/automacoes`) ficam abertas para o
+  painel desta demo; em produção, coloque-as atrás do token ou de uma rede interna, porque mostram a saída dos jobs.
 
 ## Como rodar
 
@@ -126,7 +129,7 @@ automacoes/          # as automações de exemplo (scripts Python)
 exemplos.json        # cadastro inicial: automações e agendamentos
 config.json          # prazos, intervalos e regras de escala
 disparar.py          # dispara jobs pela linha de comando
-tests/test_banco.py  # 17 testes das regras
+tests/               # 22 testes: regras do banco e o worker interrompendo o script
 Dockerfile, docker-compose.yml
 ```
 
@@ -139,7 +142,8 @@ pytest
 
 Cobrem: intervalo e horário diário (incluindo pular fim de semana), validade, automação desativada,
 etiquetas, limite simultâneo, worker que some, sinal de vida renovando o prazo, máximo de tentativas,
-resultado atrasado de worker antigo e worker morto × desligado.
+resultado atrasado de worker antigo, worker morto × desligado, job concluído no meio da recuperação
+(não volta para a fila) e worker que perde o job parando o script.
 
 ---
 
